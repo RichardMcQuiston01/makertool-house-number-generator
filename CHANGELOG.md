@@ -13,3 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ESLint + Prettier, Vitest, and GitHub Actions CI.
 - Full Apache License 2.0 text.
 - Package configured for publishing as `@richardmcquiston01/house-number-generator`.
+- Core domain types (`SignConfig`, `SignStyle`, `SignShape`, `AssemblyConfig`,
+  `ScrewSize`, `FontConfig`, `Unit`) describing a house number sign request.
+- `validateSignConfig()`, which checks a `SignConfig` against every rule from
+  the sign requirements (digits-only house number, name+font required for
+  `nameAndNumbers`, positive margin, supported screw size) and returns a
+  typed `Result` with descriptive, per-field error messages instead of
+  throwing.

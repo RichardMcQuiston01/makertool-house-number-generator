@@ -5,4 +5,15 @@
  * Public API surface is added incrementally in later development stages.
  */
 
-export const PACKAGE_NAME = '@richardmcquiston01/house-number-generator';
+export type {
+  AssemblyConfig,
+  FontConfig,
+  Result,
+  ScrewSize,
+  SignConfig,
+  SignShape,
+  SignStyle,
+  Unit,
+  ValidationError,
+} from './types.js';
+export {validateSignConfig} from './validation.js';
