@@ -36,6 +36,10 @@ export interface SignConfig {
   readonly name?: string;
   readonly font: FontConfig;
   readonly shape: SignShape;
+  /** Height of the house number glyphs, in {@link unit}. Drives the size of the whole sign. */
+  readonly numberHeight: number;
+  /** Height of the name glyphs, in {@link unit}. Defaults to {@link numberHeight} when omitted. Only used when {@link style} is `nameAndNumbers`. */
+  readonly nameHeight?: number;
   /** Uniform margin applied to every edge of the sign backer, in {@link unit}. */
   readonly margin: number;
   readonly unit: Unit;

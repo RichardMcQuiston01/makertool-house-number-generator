@@ -25,3 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   glyph outlines from a TrueType/OpenType font file — for a single
   character (house number digits) or a run of text with kerning applied
   (the name layer).
+- Layout engine (`computeSignLayout`), which turns a validated `SignConfig`
+  plus loaded fonts into full sign geometry: a sized backer (`rectangle`,
+  `square`, or `round`) that fits the number/name content plus margin on
+  every edge, one positioned outline per character (each number/name
+  character is a separate physical cut piece, spaced by advance width
+  rather than typographic kerning), and — for hardware assembly — one
+  mounting hole per character plus matching backer engraving marks, sized
+  from the selected screw size.
+
+### Changed
+
+- `SignConfig` gains `numberHeight` (required) and `nameHeight` (optional,
+  defaults to `numberHeight`), the physical height of the number/name
+  glyphs. This was needed to compute sign geometry and wasn't captured
+  by the original requirements list. `validateSignConfig()` checks both.

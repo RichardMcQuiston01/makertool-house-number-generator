@@ -66,6 +66,23 @@ export function validateSignConfig(
     });
   }
 
+  if (!Number.isFinite(config.numberHeight) || config.numberHeight <= 0) {
+    errors.push({
+      field: 'numberHeight',
+      message: 'Number height must be a positive, finite number.',
+    });
+  }
+
+  if (
+    config.nameHeight !== undefined &&
+    (!Number.isFinite(config.nameHeight) || config.nameHeight <= 0)
+  ) {
+    errors.push({
+      field: 'nameHeight',
+      message: 'Name height must be a positive, finite number when provided.',
+    });
+  }
+
   const assemblyError = validateAssembly(config.assembly);
   if (assemblyError) {
     errors.push(assemblyError);
