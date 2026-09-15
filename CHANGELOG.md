@@ -20,3 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nameAndNumbers`, positive margin, supported screw size) and returns a
   typed `Result` with descriptive, per-field error messages instead of
   throwing.
+- Font engine (`loadFont`, `getGlyphOutline`, `getTextOutline`,
+  `createFontRegistry`), built on `opentype.js`, for extracting vector
+  glyph outlines from a TrueType/OpenType font file — for a single
+  character (house number digits) or a run of text with kerning applied
+  (the name layer).
