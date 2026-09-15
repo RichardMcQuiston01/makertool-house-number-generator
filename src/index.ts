@@ -17,3 +17,18 @@ export type {
   ValidationError,
 } from './types.js';
 export {validateSignConfig} from './validation.js';
+
+export type {
+  FontLoadError,
+  FontRegistry,
+  GlyphOutline,
+  LoadedFont,
+  PathCommand,
+  TextOutline,
+} from './font.js';
+export {
+  createFontRegistry,
+  getGlyphOutline,
+  getTextOutline,
+  loadFont,
+} from './font.js';
