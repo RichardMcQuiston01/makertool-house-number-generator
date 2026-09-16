@@ -2,6 +2,16 @@
   "name": "@richardmcquiston01/house-number-generator",
   "version": "0.1.0",
   "description": "Generates SVG/DXF laser-cutter files for house number signs.",
+  "keywords": [
+    "house-number",
+    "sign-generator",
+    "laser-cutting",
+    "svg",
+    "dxf",
+    "cnc",
+    "cricut",
+    "font"
+  ],
   "license": "Apache-2.0",
   "author": "Richard McQuiston",
   "type": "module",
@@ -16,14 +26,18 @@
     }
   },
   "bin": {
-    "house-number-generator": "./dist/cli.js"
+    "house-number-generator": "dist/cli.js"
   },
   "files": [
     "dist"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/richardmcquiston01/makertool-house-number-generator.git"
+    "url": "git+https://github.com/RichardMcQuiston01/makertool-house-number-generator.git"
+  },
+  "homepage": "https://github.com/RichardMcQuiston01/makertool-house-number-generator#readme",
+  "bugs": {
+    "url": "https://github.com/RichardMcQuiston01/makertool-house-number-generator/issues"
   },
   "publishConfig": {
     "access": "public"
