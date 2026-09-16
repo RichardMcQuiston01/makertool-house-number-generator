@@ -41,6 +41,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@tarikjabiri/dxf": "^2.9.0",
     "opentype.js": "^2.0.0"
   },
   "devDependencies": {
