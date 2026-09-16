@@ -32,3 +32,14 @@ export {
   getTextOutline,
   loadFont,
 } from './font.js';
+
+export type {
+  LayoutError,
+  LayoutOptions,
+  MountingHole,
+  Point,
+  PositionedGlyph,
+  SignBacker,
+  SignLayout,
+} from './layout.js';
+export {computeSignLayout} from './layout.js';

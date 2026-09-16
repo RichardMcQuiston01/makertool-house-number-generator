@@ -8,6 +8,7 @@ function baseConfig(overrides: Partial<SignConfig> = {}): SignConfig {
     houseNumber: '1234',
     font: {numberFont: 'roboto-mono'},
     shape: 'rectangle',
+    numberHeight: 4,
     margin: 0.5,
     unit: 'in',
     assembly: {type: 'adhesive'},
@@ -69,6 +70,33 @@ describe('validateSignConfig', () => {
     if (!result.ok) {
       expect(result.error).toContainEqual(
         expect.objectContaining({field: 'margin'}),
+      );
+    }
+  });
+
+  it('rejects a non-positive number height', () => {
+    const result = validateSignConfig(baseConfig({numberHeight: 0}));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContainEqual(
+        expect.objectContaining({field: 'numberHeight'}),
+      );
+    }
+  });
+
+  it('rejects a non-positive name height when provided', () => {
+    const result = validateSignConfig(
+      baseConfig({
+        style: 'nameAndNumbers',
+        name: 'Smith',
+        font: {numberFont: 'roboto-mono', nameFont: 'roboto'},
+        nameHeight: -1,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContainEqual(
+        expect.objectContaining({field: 'nameHeight'}),
       );
     }
   });
