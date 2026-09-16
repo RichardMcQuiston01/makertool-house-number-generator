@@ -1,4 +1,4 @@
-import * as opentype from 'opentype.js';
+import opentype from 'opentype.js';
 import type {Result} from './types.js';
 
 /** Vector path command, mirroring the SVG/Canvas path command grammar. */
@@ -61,30 +61,34 @@ function requireOpentypeFont(font: LoadedFont): opentype.Font {
   return internal;
 }
 
+// opentype.js's glyph paths are Y-down (baseline y=0, ascender negative,
+// matching the canvas convention its own draw() methods target) — the
+// opposite of this package's Y-up sign convention (see layout.ts). Negate Y
+// here, once, so every consumer of PathCommand can assume Y-up.
 function toPathCommands(path: opentype.Path): PathCommand[] {
   return path.commands.map((command): PathCommand => {
     switch (command.type) {
       case 'M':
-        return {type: 'M', x: command.x, y: command.y};
+        return {type: 'M', x: command.x, y: -command.y};
       case 'L':
-        return {type: 'L', x: command.x, y: command.y};
+        return {type: 'L', x: command.x, y: -command.y};
       case 'C':
         return {
           type: 'C',
           x1: command.x1,
-          y1: command.y1,
+          y1: -command.y1,
           x2: command.x2,
-          y2: command.y2,
+          y2: -command.y2,
           x: command.x,
-          y: command.y,
+          y: -command.y,
         };
       case 'Q':
         return {
           type: 'Q',
           x1: command.x1,
-          y1: command.y1,
+          y1: -command.y1,
           x: command.x,
-          y: command.y,
+          y: -command.y,
         };
       case 'Z':
         return {type: 'Z'};

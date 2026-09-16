@@ -15,6 +15,9 @@
       "require": "./dist/index.cjs"
     }
   },
+  "bin": {
+    "house-number-generator": "./dist/cli.js"
+  },
   "files": [
     "dist"
   ],

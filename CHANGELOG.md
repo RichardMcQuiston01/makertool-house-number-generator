@@ -45,6 +45,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is dependency-free, using `class="cut"`/`class="engrave"` with a
   black/blue stroke convention and physically-sized `width`/`height`
   attributes (e.g. `"4in"`, `"100mm"`).
+- `generateSign(options)`, the top-level convenience API: validates a
+  `SignConfig`, resolves its font(s) from a `FontRegistry`, computes the
+  layout, and generates SVG and/or DXF files in one call. Returns a typed
+  `Result` whose error is tagged with the pipeline stage
+  (`'validation' | 'font' | 'layout'`) that failed.
+- A CLI (`house-number-generator`, `src/cli.ts`) for local testing:
+  `house-number-generator --config sign.json --number-font digits.ttf
+[--name-font name.ttf] --out ./dist [--format svg|dxf|both]`.
+
+### Fixed
+
+- **Font glyph outlines were vertically mirrored for every real-world font**
+  (only masked in earlier testing by synthetic test fonts built with
+  arbitrary, sign-agnostic coordinates). `opentype.js` returns glyph paths
+  in Y-down canvas convention (baseline `y=0`, ascender negative), the
+  opposite of this package's documented Y-up convention (see `layout.ts`).
+  `font.ts`'s `toPathCommands()` now negates Y once, at the single point
+  paths cross from `opentype.js` into this package's `PathCommand` type, so
+  every downstream consumer's existing Y-up assumption is actually correct.
+  Caught via an end-to-end CLI smoke test against a real font
+  (DejaVu Sans) — number/name mounting holes were landing outside the
+  sign backer's bounds entirely.
 
 ### Changed
 

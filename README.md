@@ -23,8 +23,7 @@
 ## Getting Started
 
 This package is under active development (see [CHANGELOG.md](./CHANGELOG.md)
-for progress). Prerequisites, installation, usage, and examples will be
-filled in as the public API stabilizes.
+for progress).
 
 ### Prerequisites
 
@@ -38,11 +37,72 @@ npm install @richardmcquiston01/house-number-generator
 
 ### Usage
 
-_Coming soon._
+```ts
+import {
+  createFontRegistry,
+  generateSign,
+} from '@richardmcquiston01/house-number-generator';
+import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
+
+const fonts = createFontRegistry();
+const fontBytes = new Uint8Array(readFileSync('./fonts/DejaVuSans.ttf')).buffer;
+fonts.register('digits', fontBytes);
+
+const result = generateSign({
+  config: {
+    style: 'numbersOnly',
+    houseNumber: '742',
+    font: {numberFont: 'digits'},
+    shape: 'rectangle',
+    numberHeight: 4, // inches
+    margin: 0.5,
+    unit: 'in',
+    assembly: {type: 'hardware', screwSize: 'M3'},
+  },
+  fonts,
+  format: 'both', // 'svg' | 'dxf' | 'both'
+});
+
+if (!result.ok) {
+  // result.error.stage is 'validation' | 'font' | 'layout'
+  throw new Error(`Sign generation failed at ${result.error.stage} stage`);
+}
+
+mkdirSync('./output', {recursive: true});
+for (const file of result.value) {
+  writeFileSync(`./output/${file.name}`, file.content);
+}
+```
+
+Each call to `generateSign()` returns one file per physical laser-cut piece —
+a separate file per house number digit (and per name letter, if `style` is
+`nameAndNumbers`), plus one `backer` file for the sign's backing plate.
 
 ### Examples
 
-_Coming soon._
+The package also installs a CLI for local testing, without writing any code:
+
+```bash
+npx house-number-generator \
+  --config sign.json \
+  --number-font ./fonts/DejaVuSans.ttf \
+  --out ./output
+```
+
+Where `sign.json` holds the `SignConfig` fields shown above (minus `font`,
+which the CLI fills in from `--number-font`/`--name-font`):
+
+```json
+{
+  "style": "numbersOnly",
+  "houseNumber": "742",
+  "shape": "rectangle",
+  "numberHeight": 4,
+  "margin": 0.5,
+  "unit": "in",
+  "assembly": {"type": "hardware", "screwSize": "M3"}
+}
+```
 
 ## Development
 

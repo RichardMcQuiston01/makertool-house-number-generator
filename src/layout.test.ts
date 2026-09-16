@@ -1,4 +1,4 @@
-import * as opentype from 'opentype.js';
+import opentype from 'opentype.js';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {loadFont} from './font.js';
 import type {LoadedFont} from './font.js';
