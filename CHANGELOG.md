@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than typographic kerning), and — for hardware assembly — one
   mounting hole per character plus matching backer engraving marks, sized
   from the selected screw size.
+- `generateSvgFiles(layout, unit)` and `generateDxfFiles(layout, unit)`,
+  which turn a computed `SignLayout` into one `GeneratedFile` per physical
+  laser-cut piece (one per number glyph, one per name glyph, one for the
+  backer). Per-glyph files are normalized near the origin so each piece
+  cuts efficiently on its own; the backer file carries the backer outline
+  plus, for hardware assembly, engraving marks on a separate layer/class
+  from the cut geometry. DXF output uses
+  [`@tarikjabiri/dxf`](https://www.npmjs.com/package/@tarikjabiri/dxf) with
+  `CUT`/`ENGRAVE` layers and flattens font curves to polylines; SVG output
+  is dependency-free, using `class="cut"`/`class="engrave"` with a
+  black/blue stroke convention and physically-sized `width`/`height`
+  attributes (e.g. `"4in"`, `"100mm"`).
 
 ### Changed
 
