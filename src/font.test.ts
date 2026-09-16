@@ -1,4 +1,4 @@
-import * as opentype from 'opentype.js';
+import opentype from 'opentype.js';
 import {describe, expect, it} from 'vitest';
 import {
   createFontRegistry,

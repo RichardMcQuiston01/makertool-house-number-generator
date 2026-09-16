@@ -49,3 +49,10 @@ export {computeSignLayout} from './layout.js';
 export type {GeneratedFile} from './output-svg.js';
 export {generateSvgFiles} from './output-svg.js';
 export {generateDxfFiles} from './output-dxf.js';
+
+export type {
+  GenerateSignError,
+  GenerateSignOptions,
+  OutputFormat,
+} from './generate.js';
+export {generateSign} from './generate.js';
