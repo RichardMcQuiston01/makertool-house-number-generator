@@ -43,3 +43,9 @@ export type {
   SignLayout,
 } from './layout.js';
 export {computeSignLayout} from './layout.js';
+
+// GeneratedFile is structurally identical in both output-svg.ts and
+// output-dxf.ts; re-exported once here as the shared public type.
+export type {GeneratedFile} from './output-svg.js';
+export {generateSvgFiles} from './output-svg.js';
+export {generateDxfFiles} from './output-dxf.js';
