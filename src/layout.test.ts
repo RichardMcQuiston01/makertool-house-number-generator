@@ -144,6 +144,48 @@ function buildHookFontBuffer(character: string): ArrayBuffer {
   return font.toArrayBuffer();
 }
 
+// A very thin vertical bar — its width is tiny relative to its height, so no
+// reasonable screw hole fits within it. Used to trigger the "hole doesn't
+// fit" guard rather than to check placement geometry.
+function buildThinBarFontBuffer(character: string): ArrayBuffer {
+  const glyphs = [
+    new opentype.Glyph({
+      name: '.notdef',
+      unicode: 0,
+      advanceWidth: 300,
+      path: new opentype.Path(),
+    }),
+  ];
+
+  const barWidth = 10;
+  const path = new opentype.Path();
+  path.moveTo(0, 0);
+  path.lineTo(barWidth, 0);
+  path.lineTo(barWidth, GLYPH_HEIGHT);
+  path.lineTo(0, GLYPH_HEIGHT);
+  path.close();
+
+  glyphs.push(
+    new opentype.Glyph({
+      name: character,
+      unicode: character.charCodeAt(0),
+      advanceWidth: barWidth + 50,
+      path,
+    }),
+  );
+
+  const font = new opentype.Font({
+    familyName: 'Thin Bar Test Font',
+    styleName: 'Regular',
+    unitsPerEm: UNITS_PER_EM,
+    ascender: 800,
+    descender: -200,
+    glyphs,
+  });
+
+  return font.toArrayBuffer();
+}
+
 interface TestPoint {
   readonly x: number;
   readonly y: number;
@@ -437,6 +479,34 @@ describe('computeSignLayout', () => {
       // A bounding-box-center bug lands in the empty notch between the
       // hook's two arms; the fix must land on the hook's ink instead.
       expect(isInsidePolygon(hole.center, rings[0]!)).toBe(true);
+    });
+
+    it('fails with a descriptive error when a screw hole cannot fit within a glyph', () => {
+      const thin = loadFont(buildThinBarFontBuffer('1'));
+      if (!thin.ok) throw new Error('thin bar test font failed to load');
+
+      const result = computeSignLayout(
+        baseConfig({
+          houseNumber: '1',
+          font: {numberFont: 'thin'},
+          assembly: {type: 'hardware', screwSize: 'M3'},
+        }),
+        thin.value,
+        undefined,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('number "1"');
+      expect(result.error.message).toContain('M3');
+    });
+
+    it('still succeeds when every glyph has enough clearance for the screw', () => {
+      const result = computeSignLayout(
+        baseConfig({assembly: {type: 'hardware', screwSize: 'M3'}}),
+        digitsFont,
+        undefined,
+      );
+      expect(result.ok).toBe(true);
     });
   });
 });

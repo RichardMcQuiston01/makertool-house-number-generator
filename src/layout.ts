@@ -149,9 +149,9 @@ const HOLE_SEARCH_CURVE_SEGMENTS = 12;
 
 // Flattens a glyph path into closed polygon rings (Beziers subdivided into
 // line segments), one ring per subpath. A glyph like "0" or "8" produces two
-// rings: the outer contour and an inner counter: glyphCenter (below) needs
-// real edges, not just control points, to tell "inside the letter" apart
-// from "inside its counter."
+// rings: the outer contour and an inner counter: glyphSafeCenter (below)
+// needs real edges, not just control points, to tell "inside the letter"
+// apart from "inside its counter."
 function flattenPathToRings(
   path: readonly PathCommand[],
   segments = HOLE_SEARCH_CURVE_SEGMENTS,
@@ -308,20 +308,33 @@ function makeCell(
   };
 }
 
+/** A safe hole center together with how much clearance it actually has. */
+interface SafeCenter {
+  readonly point: Point;
+  /** Distance from {@link point} to the nearest edge of the glyph's ink. */
+  readonly clearance: number;
+}
+
 // Finds the point deepest inside the glyph's ink — the "pole of
 // inaccessibility" — via a branch-and-bound grid search (Mapbox's polylabel
 // algorithm). Unlike a bounding-box center, this is guaranteed to land on
 // solid material: it maximizes distance from every edge, including the
 // inner edges of counters like the holes in "0" or "8", so it never
-// coincides with a counter and stays clear of thin strokes.
+// coincides with a counter and stays clear of thin strokes. The returned
+// clearance is how far that point actually sits from the nearest edge —
+// callers needing a hole to fully fit use it to check against the hole's
+// own radius.
 function poleOfInaccessibility(
   rings: readonly Point[][],
   bbox: BoundingBox,
   precision: number,
-): Point {
+): SafeCenter {
   const cellSize = Math.min(bbox.width, bbox.height);
   if (cellSize <= 0) {
-    return {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2};
+    return {
+      point: {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2},
+      clearance: 0,
+    };
   }
 
   let bestCell = makeCell(
@@ -355,7 +368,10 @@ function poleOfInaccessibility(
     );
   }
 
-  return {x: bestCell.x, y: bestCell.y};
+  return {
+    point: {x: bestCell.x, y: bestCell.y},
+    clearance: bestCell.distance,
+  };
 }
 
 // Screw holes need to land on solid material, not in a counter (the enclosed
@@ -363,16 +379,73 @@ function poleOfInaccessibility(
 // a bounding-box center can fall in either. This instead finds the point
 // deepest inside the glyph's ink, guaranteeing it sits on material with the
 // most clearance from every edge.
-function glyphCenter(path: readonly PathCommand[]): Point {
+function glyphSafeCenter(path: readonly PathCommand[]): SafeCenter {
   const bbox = boundingBoxOf(pathPoints(path));
   const rings = flattenPathToRings(path);
   if (rings.length === 0) {
     // No visible ink (e.g. a space in the name row): fall back to the
     // bounding box, matching prior behavior for this edge case.
-    return {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2};
+    return {
+      point: {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2},
+      clearance: 0,
+    };
   }
   const precision = Math.max(bbox.width, bbox.height) * 0.005;
   return poleOfInaccessibility(rings, bbox, precision);
+}
+
+/** One character whose mounting hole doesn't fully fit within its ink. */
+interface HoleFitViolation {
+  readonly row: 'number' | 'name';
+  readonly character: string;
+  readonly clearance: number;
+  readonly required: number;
+}
+
+// Places one mounting hole per glyph, centered via glyphSafeCenter. Any
+// glyph whose available clearance is less than the hole's own radius — the
+// hole would break through the glyph's edge or counter — is recorded in
+// `violations` rather than silently producing a hole that doesn't fit.
+function placeMountingHoles(
+  glyphs: readonly PositionedGlyph[],
+  row: 'number' | 'name',
+  diameter: number,
+  violations: HoleFitViolation[],
+): MountingHole[] {
+  const requiredRadius = diameter / 2;
+  return glyphs.map(glyph => {
+    const {point, clearance} = glyphSafeCenter(glyph.path);
+    if (clearance < requiredRadius) {
+      violations.push({
+        row,
+        character: glyph.character,
+        clearance,
+        required: requiredRadius,
+      });
+    }
+    return {center: point, diameter};
+  });
+}
+
+function holeFitErrorMessage(
+  violations: readonly HoleFitViolation[],
+  screwSize: ScrewSize,
+  unit: Unit,
+): string {
+  const round = (n: number): number => Math.round(n * 1000) / 1000;
+  const detail = violations
+    .map(
+      v =>
+        `${v.row} "${v.character}" (${round(v.clearance)} ${unit} available)`,
+    )
+    .join(', ');
+  return (
+    `Screw size ${screwSize} needs ${round(violations[0]!.required)} ${unit} ` +
+    `of clearance around each mounting hole, but these characters don't ` +
+    `have enough at the requested size: ${detail}. Increase numberHeight` +
+    `${violations.some(v => v.row === 'name') ? '/nameHeight' : ''}, or ` +
+    `choose a smaller screw size.`
+  );
 }
 
 function translatePath(
@@ -593,14 +666,35 @@ export function computeSignLayout(
   let engravingMarks: MountingHole[] | undefined;
   if (config.assembly.type === 'hardware') {
     const diameter = holeDiameter(config.assembly.screwSize, config.unit);
-    numberHoles = numberGlyphs.map(g => ({
-      center: glyphCenter(g.path),
+    const violations: HoleFitViolation[] = [];
+    numberHoles = placeMountingHoles(
+      numberGlyphs,
+      'number',
       diameter,
-    }));
-    nameHoles = nameGlyphs?.map(g => ({
-      center: glyphCenter(g.path),
-      diameter,
-    }));
+      violations,
+    );
+    nameHoles = nameGlyphs
+      ? placeMountingHoles(nameGlyphs, 'name', diameter, violations)
+      : undefined;
+
+    // A hole that doesn't fully fit isn't a smaller/uglier hole — it's a
+    // circle that breaks through the edge of the character (or into its
+    // counter), which glyphSafeCenter's clearance already tells us before
+    // any file is written. Report every offending character at once rather
+    // than emitting broken geometry.
+    if (violations.length > 0) {
+      return {
+        ok: false,
+        error: {
+          message: holeFitErrorMessage(
+            violations,
+            config.assembly.screwSize,
+            config.unit,
+          ),
+        },
+      };
+    }
+
     const markDiameter = toUnit(ENGRAVING_MARK_DIAMETER_MM, config.unit);
     engravingMarks = [...numberHoles, ...(nameHoles ?? [])].map(hole => ({
       center: hole.center,

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `computeSignLayout()` now fails with a descriptive `LayoutError` for
+  hardware assembly when a mounting hole cannot fully fit within a glyph's
+  ink at the requested size — e.g. a thin lowercase stroke against a screw
+  hole wider than the stroke itself — instead of silently placing a hole
+  that breaks through the character's edge. The message names every
+  offending character, by row, with the clearance available versus required.
+
 ### Fixed
 
 - Mounting-hole placement in `computeSignLayout()`: holes for hardware
