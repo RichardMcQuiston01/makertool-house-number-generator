@@ -50,6 +50,157 @@ function buildTestFontBuffer(characters: string): ArrayBuffer {
   return font.toArrayBuffer();
 }
 
+// A square ring — solid material between an outer square and a smaller
+// concentric inner square counter, like the digit "0" or letter "O". Its
+// bounding-box center coincides exactly with the counter's own center, so a
+// center-placement bug that ignores counters (using only the bounding box)
+// reproduces every time against this fixture, unlike the solid-rectangle
+// glyphs above.
+function buildRingFontBuffer(character: string): ArrayBuffer {
+  const glyphs = [
+    new opentype.Glyph({
+      name: '.notdef',
+      unicode: 0,
+      advanceWidth: 300,
+      path: new opentype.Path(),
+    }),
+  ];
+
+  const path = new opentype.Path();
+  path.moveTo(0, 0);
+  path.lineTo(700, 0);
+  path.lineTo(700, 700);
+  path.lineTo(0, 700);
+  path.close();
+  // Inner counter, opposite winding, centered in the outer square.
+  path.moveTo(200, 200);
+  path.lineTo(200, 500);
+  path.lineTo(500, 500);
+  path.lineTo(500, 200);
+  path.close();
+
+  glyphs.push(
+    new opentype.Glyph({
+      name: character,
+      unicode: character.charCodeAt(0),
+      advanceWidth: 750,
+      path,
+    }),
+  );
+
+  const font = new opentype.Font({
+    familyName: 'Ring Test Font',
+    styleName: 'Regular',
+    unitsPerEm: UNITS_PER_EM,
+    ascender: 800,
+    descender: -200,
+    glyphs,
+  });
+
+  return font.toArrayBuffer();
+}
+
+// An "L" hook: a horizontal foot (x:[0,700], y:[0,200]) unioned with a
+// vertical bar (x:[0,200], y:[0,700]). Its bounding-box center, (350, 350),
+// falls outside both arms entirely — a second, distinct way a bounding-box
+// center can miss a glyph's ink (as opposed to landing in a counter).
+function buildHookFontBuffer(character: string): ArrayBuffer {
+  const glyphs = [
+    new opentype.Glyph({
+      name: '.notdef',
+      unicode: 0,
+      advanceWidth: 300,
+      path: new opentype.Path(),
+    }),
+  ];
+
+  const path = new opentype.Path();
+  path.moveTo(0, 0);
+  path.lineTo(700, 0);
+  path.lineTo(700, 200);
+  path.lineTo(200, 200);
+  path.lineTo(200, 700);
+  path.lineTo(0, 700);
+  path.close();
+
+  glyphs.push(
+    new opentype.Glyph({
+      name: character,
+      unicode: character.charCodeAt(0),
+      advanceWidth: 750,
+      path,
+    }),
+  );
+
+  const font = new opentype.Font({
+    familyName: 'Hook Test Font',
+    styleName: 'Regular',
+    unitsPerEm: UNITS_PER_EM,
+    ascender: 800,
+    descender: -200,
+    glyphs,
+  });
+
+  return font.toArrayBuffer();
+}
+
+interface TestPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+// Splits a path built only from M/L/Z (as the fixtures above use) into its
+// separate closed rings, for asserting against known fixture geometry.
+function ringsFromPath(
+  path: readonly {type: string; x?: number; y?: number}[],
+): TestPoint[][] {
+  const rings: TestPoint[][] = [];
+  let ring: TestPoint[] = [];
+  for (const command of path) {
+    if (command.type === 'M') {
+      if (ring.length > 0) rings.push(ring);
+      ring = [{x: command.x ?? 0, y: command.y ?? 0}];
+    } else if (command.type === 'L') {
+      ring.push({x: command.x ?? 0, y: command.y ?? 0});
+    } else if (command.type === 'Z') {
+      rings.push(ring);
+      ring = [];
+    }
+  }
+  if (ring.length > 0) rings.push(ring);
+  return rings;
+}
+
+function bboxOfRing(ring: readonly TestPoint[]) {
+  const xs = ring.map(p => p.x);
+  const ys = ring.map(p => p.y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+function isInsidePolygon(
+  point: TestPoint,
+  ring: readonly TestPoint[],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[j]!;
+    const b = ring[i]!;
+    const straddles = a.y > point.y !== b.y > point.y;
+    if (
+      straddles &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 function baseConfig(overrides: Partial<SignConfig> = {}): SignConfig {
   return {
     style: 'numbersOnly',
@@ -219,5 +370,73 @@ describe('computeSignLayout', () => {
       expect(result.value.nameHoles).toBeUndefined();
       expect(result.value.engravingMarks).toBeUndefined();
     }
+  });
+
+  describe('mounting hole placement', () => {
+    it('does not place the hole inside a glyph counter (e.g. "0")', () => {
+      const ring = loadFont(buildRingFontBuffer('0'));
+      if (!ring.ok) throw new Error('ring test font failed to load');
+
+      const result = computeSignLayout(
+        baseConfig({
+          houseNumber: '0',
+          assembly: {type: 'hardware', screwSize: 'M3'},
+        }),
+        ring.value,
+        undefined,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const hole = result.value.numberHoles?.[0];
+      const glyph = result.value.numberGlyphs[0];
+      expect(hole).toBeDefined();
+      expect(glyph).toBeDefined();
+      if (!hole || !glyph) return;
+
+      const rings = ringsFromPath(glyph.path);
+      expect(rings).toHaveLength(2);
+      const [outer, counter] = [...rings].sort((a, b) => {
+        const areaOf = (r: TestPoint[]): number => {
+          const box = bboxOfRing(r);
+          return (box.maxX - box.minX) * (box.maxY - box.minY);
+        };
+        return areaOf(b) - areaOf(a);
+      });
+
+      // A bounding-box-center bug lands exactly at the counter's own
+      // center; the fix must land somewhere in the solid ring instead.
+      expect(isInsidePolygon(hole.center, counter!)).toBe(false);
+      expect(isInsidePolygon(hole.center, outer!)).toBe(true);
+    });
+
+    it('does not place the hole off the ink entirely (e.g. an "L"-shaped glyph)', () => {
+      const hook = loadFont(buildHookFontBuffer('L'));
+      if (!hook.ok) throw new Error('hook test font failed to load');
+
+      const result = computeSignLayout(
+        baseConfig({
+          houseNumber: 'L',
+          font: {numberFont: 'hook'},
+          assembly: {type: 'hardware', screwSize: 'M3'},
+        }),
+        hook.value,
+        undefined,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const hole = result.value.numberHoles?.[0];
+      const glyph = result.value.numberGlyphs[0];
+      expect(hole).toBeDefined();
+      expect(glyph).toBeDefined();
+      if (!hole || !glyph) return;
+
+      const rings = ringsFromPath(glyph.path);
+      expect(rings).toHaveLength(1);
+      // A bounding-box-center bug lands in the empty notch between the
+      // hook's two arms; the fix must land on the hook's ink instead.
+      expect(isInsidePolygon(hole.center, rings[0]!)).toBe(true);
+    });
   });
 });

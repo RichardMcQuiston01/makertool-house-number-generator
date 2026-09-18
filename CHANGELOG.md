@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Mounting-hole placement in `computeSignLayout()`: holes for hardware
+  assembly were centered on each glyph's bounding box, which for digits and
+  letters with a counter (e.g. `0`, `4`, `6`, `8`, `9`) could land inside the
+  counter — off the glyph's ink entirely — rather than on solid material.
+  Hole centers are now found via a pole-of-inaccessibility search (the point
+  deepest inside the glyph's ink, maximizing clearance from every edge,
+  including counters), so they always land on material with the most
+  available clearance.
+
 ## [0.1.0] - 2026-09-16
 
 ### Added
