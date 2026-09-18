@@ -144,9 +144,308 @@ function unionBoundingBox(
   return boundingBoxOf(paths.flatMap(pathPoints));
 }
 
-function glyphCenter(path: readonly PathCommand[]): Point {
+/** Number of straight-line segments used to flatten each C/Q Bezier curve. */
+const HOLE_SEARCH_CURVE_SEGMENTS = 12;
+
+// Flattens a glyph path into closed polygon rings (Beziers subdivided into
+// line segments), one ring per subpath. A glyph like "0" or "8" produces two
+// rings: the outer contour and an inner counter: glyphSafeCenter (below)
+// needs real edges, not just control points, to tell "inside the letter"
+// apart from "inside its counter."
+function flattenPathToRings(
+  path: readonly PathCommand[],
+  segments = HOLE_SEARCH_CURVE_SEGMENTS,
+): Point[][] {
+  const rings: Point[][] = [];
+  let ring: Point[] = [];
+  let current: Point = {x: 0, y: 0};
+
+  const finishRing = (): void => {
+    if (ring.length >= 3) rings.push(ring);
+    ring = [];
+  };
+  const quadPoints = (p0: Point, c: Point, p2: Point): Point[] => {
+    const points: Point[] = [];
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const mt = 1 - t;
+      points.push({
+        x: mt * mt * p0.x + 2 * mt * t * c.x + t * t * p2.x,
+        y: mt * mt * p0.y + 2 * mt * t * c.y + t * t * p2.y,
+      });
+    }
+    return points;
+  };
+  const cubicPoints = (p0: Point, c1: Point, c2: Point, p3: Point): Point[] => {
+    const points: Point[] = [];
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const mt = 1 - t;
+      points.push({
+        x:
+          mt * mt * mt * p0.x +
+          3 * mt * mt * t * c1.x +
+          3 * mt * t * t * c2.x +
+          t * t * t * p3.x,
+        y:
+          mt * mt * mt * p0.y +
+          3 * mt * mt * t * c1.y +
+          3 * mt * t * t * c2.y +
+          t * t * t * p3.y,
+      });
+    }
+    return points;
+  };
+
+  for (const command of path) {
+    switch (command.type) {
+      case 'M':
+        finishRing();
+        current = {x: command.x, y: command.y};
+        ring = [current];
+        break;
+      case 'L':
+        current = {x: command.x, y: command.y};
+        ring.push(current);
+        break;
+      case 'Q': {
+        const end = {x: command.x, y: command.y};
+        ring.push(...quadPoints(current, {x: command.x1, y: command.y1}, end));
+        current = end;
+        break;
+      }
+      case 'C': {
+        const end = {x: command.x, y: command.y};
+        ring.push(
+          ...cubicPoints(
+            current,
+            {x: command.x1, y: command.y1},
+            {x: command.x2, y: command.y2},
+            end,
+          ),
+        );
+        current = end;
+        break;
+      }
+      case 'Z':
+        finishRing();
+        break;
+    }
+  }
+  finishRing();
+  return rings;
+}
+
+// Shortest distance from a point to a line segment.
+function pointToSegmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = Math.max(
+    0,
+    Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)),
+  );
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+function distanceToRings(p: Point, rings: readonly Point[][]): number {
+  let min = Infinity;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      min = Math.min(min, pointToSegmentDistance(p, ring[j]!, ring[i]!));
+    }
+  }
+  return min;
+}
+
+// Even-odd point-in-polygon test across every ring: a point inside the outer
+// contour but also inside a nested counter (e.g. the hole of "0") crosses an
+// even number of edges overall, correctly reading as "outside the ink."
+function isInsideRings(p: Point, rings: readonly Point[][]): boolean {
+  let crossings = 0;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j]!;
+      const b = ring[i]!;
+      const straddles = a.y > p.y !== b.y > p.y;
+      if (straddles && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+        crossings++;
+      }
+    }
+  }
+  return crossings % 2 === 1;
+}
+
+// Positive inside the glyph's ink (distance to the nearest edge), negative
+// outside it (e.g. inside a counter, or off the glyph entirely).
+function signedDistanceToInk(p: Point, rings: readonly Point[][]): number {
+  const distance = distanceToRings(p, rings);
+  return isInsideRings(p, rings) ? distance : -distance;
+}
+
+interface SearchCell {
+  readonly x: number;
+  readonly y: number;
+  readonly halfSize: number;
+  readonly distance: number;
+  /** Best distance any point in this cell could possibly reach. */
+  readonly potential: number;
+}
+
+function makeCell(
+  x: number,
+  y: number,
+  halfSize: number,
+  rings: readonly Point[][],
+): SearchCell {
+  const distance = signedDistanceToInk({x, y}, rings);
+  return {
+    x,
+    y,
+    halfSize,
+    distance,
+    potential: distance + halfSize * Math.SQRT2,
+  };
+}
+
+/** A safe hole center together with how much clearance it actually has. */
+interface SafeCenter {
+  readonly point: Point;
+  /** Distance from {@link point} to the nearest edge of the glyph's ink. */
+  readonly clearance: number;
+}
+
+// Finds the point deepest inside the glyph's ink — the "pole of
+// inaccessibility" — via a branch-and-bound grid search (Mapbox's polylabel
+// algorithm). Unlike a bounding-box center, this is guaranteed to land on
+// solid material: it maximizes distance from every edge, including the
+// inner edges of counters like the holes in "0" or "8", so it never
+// coincides with a counter and stays clear of thin strokes. The returned
+// clearance is how far that point actually sits from the nearest edge —
+// callers needing a hole to fully fit use it to check against the hole's
+// own radius.
+function poleOfInaccessibility(
+  rings: readonly Point[][],
+  bbox: BoundingBox,
+  precision: number,
+): SafeCenter {
+  const cellSize = Math.min(bbox.width, bbox.height);
+  if (cellSize <= 0) {
+    return {
+      point: {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2},
+      clearance: 0,
+    };
+  }
+
+  let bestCell = makeCell(
+    bbox.minX + bbox.width / 2,
+    bbox.minY + bbox.height / 2,
+    0,
+    rings,
+  );
+
+  const queue: SearchCell[] = [];
+  const halfSize = cellSize / 2;
+  for (let x = bbox.minX; x < bbox.maxX; x += cellSize) {
+    for (let y = bbox.minY; y < bbox.maxY; y += cellSize) {
+      queue.push(makeCell(x + halfSize, y + halfSize, halfSize, rings));
+    }
+  }
+
+  while (queue.length > 0) {
+    queue.sort((a, b) => a.potential - b.potential);
+    const cell = queue.pop()!;
+    if (cell.distance > bestCell.distance) bestCell = cell;
+    // No child of this cell could beat the best point found so far.
+    if (cell.potential - bestCell.distance <= precision) continue;
+
+    const quarter = cell.halfSize / 2;
+    queue.push(
+      makeCell(cell.x - quarter, cell.y - quarter, quarter, rings),
+      makeCell(cell.x + quarter, cell.y - quarter, quarter, rings),
+      makeCell(cell.x - quarter, cell.y + quarter, quarter, rings),
+      makeCell(cell.x + quarter, cell.y + quarter, quarter, rings),
+    );
+  }
+
+  return {
+    point: {x: bestCell.x, y: bestCell.y},
+    clearance: bestCell.distance,
+  };
+}
+
+// Screw holes need to land on solid material, not in a counter (the enclosed
+// hole in glyphs like "0", "4", "6", "8", "9") or hanging off a thin stroke —
+// a bounding-box center can fall in either. This instead finds the point
+// deepest inside the glyph's ink, guaranteeing it sits on material with the
+// most clearance from every edge.
+function glyphSafeCenter(path: readonly PathCommand[]): SafeCenter {
   const bbox = boundingBoxOf(pathPoints(path));
-  return {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2};
+  const rings = flattenPathToRings(path);
+  if (rings.length === 0) {
+    // No visible ink (e.g. a space in the name row): fall back to the
+    // bounding box, matching prior behavior for this edge case.
+    return {
+      point: {x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2},
+      clearance: 0,
+    };
+  }
+  const precision = Math.max(bbox.width, bbox.height) * 0.005;
+  return poleOfInaccessibility(rings, bbox, precision);
+}
+
+/** One character whose mounting hole doesn't fully fit within its ink. */
+interface HoleFitViolation {
+  readonly row: 'number' | 'name';
+  readonly character: string;
+  readonly clearance: number;
+  readonly required: number;
+}
+
+// Places one mounting hole per glyph, centered via glyphSafeCenter. Any
+// glyph whose available clearance is less than the hole's own radius — the
+// hole would break through the glyph's edge or counter — is recorded in
+// `violations` rather than silently producing a hole that doesn't fit.
+function placeMountingHoles(
+  glyphs: readonly PositionedGlyph[],
+  row: 'number' | 'name',
+  diameter: number,
+  violations: HoleFitViolation[],
+): MountingHole[] {
+  const requiredRadius = diameter / 2;
+  return glyphs.map(glyph => {
+    const {point, clearance} = glyphSafeCenter(glyph.path);
+    if (clearance < requiredRadius) {
+      violations.push({
+        row,
+        character: glyph.character,
+        clearance,
+        required: requiredRadius,
+      });
+    }
+    return {center: point, diameter};
+  });
+}
+
+function holeFitErrorMessage(
+  violations: readonly HoleFitViolation[],
+  screwSize: ScrewSize,
+  unit: Unit,
+): string {
+  const round = (n: number): number => Math.round(n * 1000) / 1000;
+  const detail = violations
+    .map(
+      v =>
+        `${v.row} "${v.character}" (${round(v.clearance)} ${unit} available)`,
+    )
+    .join(', ');
+  return (
+    `Screw size ${screwSize} needs ${round(violations[0]!.required)} ${unit} ` +
+    `of clearance around each mounting hole, but these characters don't ` +
+    `have enough at the requested size: ${detail}. Increase numberHeight` +
+    `${violations.some(v => v.row === 'name') ? '/nameHeight' : ''}, or ` +
+    `choose a smaller screw size.`
+  );
 }
 
 function translatePath(
@@ -367,14 +666,35 @@ export function computeSignLayout(
   let engravingMarks: MountingHole[] | undefined;
   if (config.assembly.type === 'hardware') {
     const diameter = holeDiameter(config.assembly.screwSize, config.unit);
-    numberHoles = numberGlyphs.map(g => ({
-      center: glyphCenter(g.path),
+    const violations: HoleFitViolation[] = [];
+    numberHoles = placeMountingHoles(
+      numberGlyphs,
+      'number',
       diameter,
-    }));
-    nameHoles = nameGlyphs?.map(g => ({
-      center: glyphCenter(g.path),
-      diameter,
-    }));
+      violations,
+    );
+    nameHoles = nameGlyphs
+      ? placeMountingHoles(nameGlyphs, 'name', diameter, violations)
+      : undefined;
+
+    // A hole that doesn't fully fit isn't a smaller/uglier hole — it's a
+    // circle that breaks through the edge of the character (or into its
+    // counter), which glyphSafeCenter's clearance already tells us before
+    // any file is written. Report every offending character at once rather
+    // than emitting broken geometry.
+    if (violations.length > 0) {
+      return {
+        ok: false,
+        error: {
+          message: holeFitErrorMessage(
+            violations,
+            config.assembly.screwSize,
+            config.unit,
+          ),
+        },
+      };
+    }
+
     const markDiameter = toUnit(ENGRAVING_MARK_DIAMETER_MM, config.unit);
     engravingMarks = [...numberHoles, ...(nameHoles ?? [])].map(hole => ({
       center: hole.center,
