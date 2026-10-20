@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-20
+
+### Added
+
+- `funding` field in `package.json` pointing at the Stripe donation link, so
+  `npm fund` and the npm package page show it.
+
+### Changed
+
+- Rewrote the README: documents the full public API, the CLI flags, every
+  supported screw size, and the generated file layout.
+
+### Fixed
+
+- `donate.svg` did not decode as a QR code; regenerated it so it reliably
+  encodes the Stripe donation link.
+
 ## [0.1.1] - 2026-09-18
 
 ### Added

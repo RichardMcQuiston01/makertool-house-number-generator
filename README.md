@@ -1,43 +1,40 @@
 # House Number Sign Generator
 
-[**Live demo**](https://house-number-generator-demo.vercel.app/)
+[![npm](https://img.shields.io/npm/v/@richardmcquiston01/house-number-generator)](https://www.npmjs.com/package/@richardmcquiston01/house-number-generator)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 
-## Overview
+Generate SVG and DXF cut files for a laser-cut house number sign: one file per
+digit, one per name letter, and one for the backer plate. Describe the sign in
+a config object and get back files ready for a laser cutter, CNC, or Cricut.
 
-- User chooses sign style(numbers only or name + numbers).
-- User enters digits representing their house's street number.
-- User chooses from list of fonts for numbers
-  -- If user chose "name + numbers", user can also choose a font for name
-- User chooses sign shape(square, rectangle, or round)
-- User selects sign margin(i.e. 1/2")
-- User selects assembly type(hardware(i.e. screw) or non-hardware(i.e. glued, adhesive paper, etc.)
-  -- If user chooses Hardware assembly type, user should select screw size(i.e. M3, 3/8", etc.).
+[**Live demo**](https://house-number-generator-demo.vercel.app/) — configure a
+sign in the browser and download the files, no code required.
 
-- Generate DXF(or SVG) for each Number for cutting out on Laser Cutter.
-  -- If user selected Hardware assembly type, we'll need to add holes for affixing number(s) to sign backer using screw hardware
+## Features
 
-- If user chose "name + numbers", generate a cut file for the Name as well.
-  -- If user selected Hardware assembly type, we'll need to add holes for affixing name layer to sign backer using screw hardware
+- **Two sign styles** — house number only, or a name plus the number.
+- **Three backer shapes** — square, rectangle, or round, sized automatically so
+  every glyph fits inside the margin you choose.
+- **Your fonts** — load any TrueType/OpenType font; glyph outlines become cut
+  paths.
+- **Hardware or adhesive assembly** — for screws, a mounting hole is placed at
+  the deepest interior point of each glyph, with matching engraving marks on
+  the backer. Supports M3, M4, M5, #4-40, #6-32, #8-32, #10-24, and 1/4-20.
+- **SVG and DXF output** — physically sized (`4in`, `100mm`), with cut and
+  engrave geometry kept separate.
+- **Typed errors, no exceptions** — every fallible call returns a `Result` that
+  says which stage failed and why.
+- **CLI included** — generate files from a JSON config without writing code.
 
-- Generate sign backer based upon sign shape such that all numbers fit within the bounds of the sign including the margin selected for each edge(top, bottom, left, and right).
-  -- If user selected Hardware assembly type, we should add engraving marks to sign backer where screws for number(s) and/or name will be attached to sign backer.
+## Installation
 
-## Getting Started
-
-This package is under active development (see [CHANGELOG.md](./CHANGELOG.md)
-for progress).
-
-### Prerequisites
-
-- Node.js >= 18
-
-### Installation
+Requires Node.js 18 or later.
 
 ```bash
 npm install @richardmcquiston01/house-number-generator
 ```
 
-### Usage
+## Usage
 
 ```ts
 import {
@@ -48,7 +45,10 @@ import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 
 const fonts = createFontRegistry();
 const fontBytes = new Uint8Array(readFileSync('./fonts/DejaVuSans.ttf')).buffer;
-fonts.register('digits', fontBytes);
+const registered = fonts.register('digits', fontBytes);
+if (!registered.ok) {
+  throw new Error(`Could not load font: ${registered.error.message}`);
+}
 
 const result = generateSign({
   config: {
@@ -76,13 +76,56 @@ for (const file of result.value) {
 }
 ```
 
-Each call to `generateSign()` returns one file per physical laser-cut piece —
-a separate file per house number digit (and per name letter, if `style` is
-`nameAndNumbers`), plus one `backer` file for the sign's backing plate.
+### Output files
 
-### Examples
+`generateSign()` returns one `{name, content}` file per physical piece, per
+requested format:
 
-The package also installs a CLI for local testing, without writing any code:
+| File                       | Piece                                  |
+| -------------------------- | -------------------------------------- |
+| `number-<i>-<digit>.<ext>` | One per house number digit             |
+| `name-<i>-<letter>.<ext>`  | One per name letter (`nameAndNumbers`) |
+| `backer.<ext>`             | The backer plate, with engraving marks |
+
+`<ext>` is `svg` or `dxf`. Cut geometry is on a `CUT` layer (SVG:
+`class="cut"`, black); screw-position marks are on `ENGRAVE` (SVG:
+`class="engrave"`, blue).
+
+### Configuration
+
+| Field          | Type                                                  | Notes                                      |
+| -------------- | ----------------------------------------------------- | ------------------------------------------ |
+| `style`        | `'numbersOnly' \| 'nameAndNumbers'`                   |                                            |
+| `houseNumber`  | `string`                                              | Digits only                                |
+| `name`         | `string`                                              | Required for `nameAndNumbers`              |
+| `font`         | `{numberFont, nameFont?}`                             | IDs registered in the font registry        |
+| `shape`        | `'square' \| 'rectangle' \| 'round'`                  |                                            |
+| `numberHeight` | `number`                                              | Glyph height; drives the overall sign size |
+| `nameHeight`   | `number`                                              | Defaults to `numberHeight`                 |
+| `margin`       | `number`                                              | Applied to every edge of the backer        |
+| `unit`         | `'in' \| 'mm'`                                        |                                            |
+| `assembly`     | `{type: 'hardware', screwSize} \| {type: 'adhesive'}` |                                            |
+
+Hardware assembly fails with a descriptive `LayoutError` if a screw hole can't
+fit inside a glyph's stroke (for example, a thin letter with a large screw).
+The message lists each offending character with the clearance available versus
+required; choose a smaller screw or a thicker font.
+
+### Lower-level API
+
+`generateSign()` chains these, and each is exported on its own:
+
+- `validateSignConfig(config)` — field-level validation errors.
+- `loadFont`, `createFontRegistry`, `getGlyphOutline`, `getTextOutline` — font
+  loading and glyph outlines.
+- `computeSignLayout(config, numberFont, nameFont, options?)` — sign geometry,
+  with optional `letterSpacing` and `rowGap`.
+- `generateSvgFiles(layout, unit)` and `generateDxfFiles(layout, unit)` — turn a
+  layout into files.
+
+## Command line
+
+The package installs a `house-number-generator` command:
 
 ```bash
 npx house-number-generator \
@@ -91,8 +134,16 @@ npx house-number-generator \
   --out ./output
 ```
 
-Where `sign.json` holds the `SignConfig` fields shown above (minus `font`,
-which the CLI fills in from `--number-font`/`--name-font`):
+| Flag            | Required | Description                              |
+| --------------- | -------- | ---------------------------------------- |
+| `--config`      | yes      | Path to the sign config JSON             |
+| `--number-font` | yes      | Font file for the house number           |
+| `--name-font`   | no       | Font file for the name                   |
+| `--out`         | yes      | Output directory                         |
+| `--format`      | no       | `svg`, `dxf`, or `both` (default `both`) |
+
+`sign.json` holds the config fields above, minus `font` (the CLI fills it in
+from the font flags):
 
 ```json
 {
@@ -110,12 +161,22 @@ which the CLI fills in from `--number-font`/`--name-font`):
 
 ```bash
 npm install
-npm run build      # compile to dist/ (ESM + CJS + types)
-npm test           # run unit tests
+npm run build       # compile to dist/ (ESM + CJS + types)
+npm test            # run unit tests
 npm run lint        # lint with ESLint
 npm run format      # format with Prettier
 npm run typecheck   # type-check without emitting
 ```
+
+Pushing a `v*` tag runs the publish workflow (format check, lint, typecheck,
+tests, build, then `npm publish`). See [CHANGELOG.md](./CHANGELOG.md) for
+release history.
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE).
+
+© 2026 Richard McQuiston. All rights reserved.
 
 ## Buy Me a Coffee
 
@@ -124,11 +185,3 @@ If this app, code, or repository has helped you or someone you know, please cons
 [**Donate via Stripe**](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800), or scan:
 
 [![Donate via Stripe](./donate.svg)](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800)
-
-## License
-
-Apache 2
-
-## Copyright
-
-(c)2026 Richard McQuiston. All rights reserved.
