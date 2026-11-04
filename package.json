@@ -72,5 +72,9 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vitest": "^5.0.1"
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://www.paypal.com/ncp/payment/BGTZ6GYWUTPYG"
   }
 }
