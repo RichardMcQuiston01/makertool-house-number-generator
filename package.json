@@ -13,6 +13,10 @@
     "font"
   ],
   "license": "Apache-2.0",
+  "funding": {
+    "type": "individual",
+    "url": "https://ko-fi.com/P1V529Z7ZP"
+  },
   "author": "Richard McQuiston",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -72,9 +76,5 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vitest": "^5.0.1"
-  },
-  "funding": {
-    "type": "individual",
-    "url": "https://www.paypal.com/ncp/payment/BGTZ6GYWUTPYG"
   }
 }

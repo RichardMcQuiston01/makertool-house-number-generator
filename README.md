@@ -121,9 +121,7 @@ npm run typecheck   # type-check without emitting
 
 If this app, code, or repository has helped you or someone you know, please consider donating. I appreciate any help to offset the costs of development and/or AI Credits.
 
-[**Donate via PayPal**](https://www.paypal.com/ncp/payment/BGTZ6GYWUTPYG), or scan:
-
-[![Donate via PayPal](./donate.png)](https://www.paypal.com/ncp/payment/BGTZ6GYWUTPYG)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P1V529Z7ZP)
 
 ## License
 
